@@ -1,0 +1,576 @@
+-- SimulatorUI LocalScript
+-- Place in StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ============================================================
+-- CONFIG
+-- ============================================================
+local CONFIG = {
+	COIN_TWEEN_DURATION = 0.6,
+	PANEL_TWEEN_DURATION = 0.35,
+	HOVER_TWEEN_DURATION = 0.12,
+	PANEL_OPEN_SCALE = 1,
+	PANEL_CLOSED_SCALE = 0.85,
+	RARITY_COLORS = {
+		Common   = Color3.fromRGB(180, 180, 180),
+		Uncommon = Color3.fromRGB(80,  200, 100),
+		Rare     = Color3.fromRGB(80,  140, 255),
+		Epic     = Color3.fromRGB(180, 80,  255),
+		Legendary= Color3.fromRGB(255, 170, 30),
+	},
+	RARITY_GLOW = {
+		Common   = Color3.fromRGB(140, 140, 140),
+		Uncommon = Color3.fromRGB(60,  180, 80),
+		Rare     = Color3.fromRGB(60,  120, 255),
+		Epic     = Color3.fromRGB(160, 60,  240),
+		Legendary= Color3.fromRGB(255, 140, 0),
+	},
+}
+
+-- ============================================================
+-- INVENTORY ITEMS  (expand freely)
+-- ============================================================
+local ITEMS = {
+	{ id = 1, name = "Wooden Sword",  rarity = "Common",    icon = "rbxassetid://6031068421", owned = true,  count = 3  },
+	{ id = 2, name = "Magic Staff",   rarity = "Rare",      icon = "rbxassetid://6031068421", owned = true,  count = 1  },
+	{ id = 3, name = "Dragon Egg",    rarity = "Legendary", icon = "rbxassetid://6031068421", owned = false, count = 0  },
+	{ id = 4, name = "Iron Shield",   rarity = "Uncommon",  icon = "rbxassetid://6031068421", owned = true,  count = 2  },
+	{ id = 5, name = "Shadow Cape",   rarity = "Epic",      icon = "rbxassetid://6031068421", owned = false, count = 0  },
+	{ id = 6, name = "Speed Boots",   rarity = "Rare",      icon = "rbxassetid://6031068421", owned = true,  count = 1  },
+	{ id = 7, name = "Healing Potion",rarity = "Common",    icon = "rbxassetid://6031068421", owned = true,  count = 10 },
+	{ id = 8, name = "Fire Wand",     rarity = "Epic",      icon = "rbxassetid://6031068421", owned = false, count = 0  },
+}
+
+-- ============================================================
+-- HELPERS
+-- ============================================================
+local function makeTweenInfo(duration, style, direction)
+	return TweenInfo.new(
+		duration or 0.3,
+		style     or Enum.EasingStyle.Quart,
+		direction or Enum.EasingDirection.Out
+	)
+end
+
+local function formatNumber(n)
+	-- Adds comma separators: 1234567 → "1,234,567"
+	local s = tostring(math.floor(n))
+	return s:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+end
+
+-- ============================================================
+-- BUILD SCREENGUI
+-- ============================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "SimulatorUI"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = playerGui
+
+-- ============================================================
+-- COINS DISPLAY (bottom-left)
+-- ============================================================
+local coinsFrame = Instance.new("Frame")
+coinsFrame.Name = "CoinsDisplay"
+coinsFrame.Size = UDim2.new(0, 180, 0, 50)
+coinsFrame.Position = UDim2.new(0, 16, 1, -66)
+coinsFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+coinsFrame.BackgroundTransparency = 0.15
+coinsFrame.BorderSizePixel = 0
+coinsFrame.Parent = screenGui
+
+do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 14)
+	corner.Parent = coinsFrame
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(255, 185, 30)
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.4
+	stroke.Parent = coinsFrame
+
+	-- Gold coin icon
+	local coinIcon = Instance.new("ImageLabel")
+	coinIcon.Name = "CoinIcon"
+	coinIcon.Size = UDim2.new(0, 32, 0, 32)
+	coinIcon.Position = UDim2.new(0, 8, 0.5, -16)
+	coinIcon.BackgroundTransparency = 1
+	-- Replace with your own gold coin asset:
+	coinIcon.Image = "rbxassetid://6034973115"
+	coinIcon.Parent = coinsFrame
+
+	-- Coin label
+	local coinLabel = Instance.new("TextLabel")
+	coinLabel.Name = "CoinLabel"
+	coinLabel.Size = UDim2.new(1, -52, 1, 0)
+	coinLabel.Position = UDim2.new(0, 48, 0, 0)
+	coinLabel.BackgroundTransparency = 1
+	coinLabel.Font = Enum.Font.GothamBold
+	coinLabel.TextSize = 20
+	coinLabel.TextColor3 = Color3.fromRGB(255, 220, 80)
+	coinLabel.TextXAlignment = Enum.TextXAlignment.Left
+	coinLabel.TextYAlignment = Enum.TextYAlignment.Center
+	coinLabel.Text = "0"
+	coinLabel.Parent = coinsFrame
+end
+
+-- ============================================================
+-- INVENTORY BUTTON (right side, vertical center)
+-- ============================================================
+local invButton = Instance.new("TextButton")
+invButton.Name = "InventoryButton"
+invButton.Size = UDim2.new(0, 64, 0, 64)
+invButton.Position = UDim2.new(1, -80, 0.5, -32)
+invButton.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
+invButton.BackgroundTransparency = 0.1
+invButton.BorderSizePixel = 0
+invButton.Text = ""
+invButton.Parent = screenGui
+
+do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 16)
+	corner.Parent = invButton
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(100, 100, 130)
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.3
+	stroke.Parent = invButton
+
+	local icon = Instance.new("ImageLabel")
+	icon.Size = UDim2.new(0, 36, 0, 36)
+	icon.Position = UDim2.new(0.5, -18, 0.5, -22)
+	icon.BackgroundTransparency = 1
+	icon.Image = "rbxassetid://6035047449" -- backpack icon; swap as needed
+	icon.Parent = invButton
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 18)
+	label.Position = UDim2.new(0, 0, 1, -20)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamSemibold
+	label.TextSize = 12
+	label.TextColor3 = Color3.fromRGB(200, 200, 220)
+	label.Text = "Inventory"
+	label.Parent = invButton
+end
+
+-- ============================================================
+-- INVENTORY PANEL (center screen)
+-- ============================================================
+local panelAnchor = Instance.new("Frame") -- invisible anchor for pivot
+panelAnchor.Name = "PanelAnchor"
+panelAnchor.Size = UDim2.new(0, 500, 0, 420)
+panelAnchor.Position = UDim2.new(0.5, -250, 0.5, -210)
+panelAnchor.BackgroundTransparency = 1
+panelAnchor.ClipsDescendants = false
+panelAnchor.Visible = false
+panelAnchor.Parent = screenGui
+
+local invPanel = Instance.new("Frame")
+invPanel.Name = "InventoryPanel"
+invPanel.Size = UDim2.new(1, 0, 1, 0)
+invPanel.Position = UDim2.new(0, 0, 0, 0)
+invPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+invPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+invPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+invPanel.BackgroundTransparency = 0.05
+invPanel.BorderSizePixel = 0
+invPanel.Parent = panelAnchor
+
+do
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 20)
+	corner.Parent = invPanel
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.fromRGB(80, 80, 110)
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.2
+	stroke.Parent = invPanel
+
+	-- Header
+	local header = Instance.new("Frame")
+	header.Size = UDim2.new(1, 0, 0, 56)
+	header.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+	header.BorderSizePixel = 0
+	header.Parent = invPanel
+	Instance.new("UICorner", header).CornerRadius = UDim.new(0, 20)
+
+	local headerLabel = Instance.new("TextLabel")
+	headerLabel.Size = UDim2.new(1, -60, 1, 0)
+	headerLabel.Position = UDim2.new(0, 20, 0, 0)
+	headerLabel.BackgroundTransparency = 1
+	headerLabel.Font = Enum.Font.GothamBold
+	headerLabel.TextSize = 22
+	headerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+	headerLabel.TextXAlignment = Enum.TextXAlignment.Left
+	headerLabel.Text = "🎒  Inventory"
+	headerLabel.Parent = header
+
+	-- Close button
+	local closeBtn = Instance.new("TextButton")
+	closeBtn.Name = "CloseButton"
+	closeBtn.Size = UDim2.new(0, 36, 0, 36)
+	closeBtn.Position = UDim2.new(1, -46, 0.5, -18)
+	closeBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+	closeBtn.BorderSizePixel = 0
+	closeBtn.Font = Enum.Font.GothamBold
+	closeBtn.TextSize = 18
+	closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	closeBtn.Text = "✕"
+	closeBtn.Parent = header
+	Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 10)
+
+	-- Scrolling grid
+	local scrollFrame = Instance.new("ScrollingFrame")
+	scrollFrame.Name = "ItemGrid"
+	scrollFrame.Size = UDim2.new(1, -24, 1, -72)
+	scrollFrame.Position = UDim2.new(0, 12, 0, 62)
+	scrollFrame.BackgroundTransparency = 1
+	scrollFrame.BorderSizePixel = 0
+	scrollFrame.ScrollBarThickness = 4
+	scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(100, 100, 140)
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scrollFrame.Parent = invPanel
+
+	local grid = Instance.new("UIGridLayout")
+	grid.CellSize = UDim2.new(0, 100, 0, 110)
+	grid.CellPadding = UDim2.new(0, 10, 0, 10)
+	grid.SortOrder = Enum.SortOrder.LayoutOrder
+	grid.Parent = scrollFrame
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0, 6)
+	padding.PaddingLeft = UDim.new(0, 4)
+	padding.Parent = scrollFrame
+
+	-- Build item cards
+	for _, item in ipairs(ITEMS) do
+		local rarityColor = CONFIG.RARITY_COLORS[item.rarity] or Color3.fromRGB(180, 180, 180)
+
+		local card = Instance.new("Frame")
+		card.Name = "Item_" .. item.id
+		card.LayoutOrder = item.id
+		card.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+		card.BackgroundTransparency = item.owned and 0 or 0.4
+		card.BorderSizePixel = 0
+		card.Parent = scrollFrame
+
+		Instance.new("UICorner", card).CornerRadius = UDim.new(0, 12)
+
+		local cardStroke = Instance.new("UIStroke")
+		cardStroke.Color = rarityColor
+		cardStroke.Thickness = 1.8
+		cardStroke.Transparency = item.owned and 0.2 or 0.7
+		cardStroke.Parent = card
+
+		-- Rarity badge (top strip)
+		local badge = Instance.new("Frame")
+		badge.Size = UDim2.new(1, 0, 0, 6)
+		badge.BackgroundColor3 = rarityColor
+		badge.BackgroundTransparency = item.owned and 0 or 0.6
+		badge.BorderSizePixel = 0
+		badge.Parent = card
+		do
+			local bc = Instance.new("UICorner")
+			bc.CornerRadius = UDim.new(0, 12)
+			bc.Parent = badge
+		end
+
+		-- Item icon
+		local iconImg = Instance.new("ImageLabel")
+		iconImg.Size = UDim2.new(0, 52, 0, 52)
+		iconImg.Position = UDim2.new(0.5, -26, 0, 12)
+		iconImg.BackgroundTransparency = 1
+		iconImg.Image = item.icon
+		iconImg.ImageTransparency = item.owned and 0 or 0.5
+		iconImg.Parent = card
+
+		-- Item name
+		local nameLabel = Instance.new("TextLabel")
+		nameLabel.Size = UDim2.new(1, -4, 0, 16)
+		nameLabel.Position = UDim2.new(0, 2, 0, 68)
+		nameLabel.BackgroundTransparency = 1
+		nameLabel.Font = Enum.Font.GothamSemibold
+		nameLabel.TextSize = 11
+		nameLabel.TextColor3 = item.owned and Color3.fromRGB(230, 230, 240) or Color3.fromRGB(120, 120, 140)
+		nameLabel.TextWrapped = true
+		nameLabel.Text = item.name
+		nameLabel.Parent = card
+
+		-- Rarity label
+		local rarLabel = Instance.new("TextLabel")
+		rarLabel.Size = UDim2.new(1, -4, 0, 13)
+		rarLabel.Position = UDim2.new(0, 2, 0, 84)
+		rarLabel.BackgroundTransparency = 1
+		rarLabel.Font = Enum.Font.Gotham
+		rarLabel.TextSize = 10
+		rarLabel.TextColor3 = rarityColor
+		rarLabel.Text = item.rarity
+		rarLabel.Parent = card
+
+		-- Count badge (if owned and count > 1)
+		if item.owned and item.count > 1 then
+			local countBadge = Instance.new("Frame")
+			countBadge.Size = UDim2.new(0, 22, 0, 18)
+			countBadge.Position = UDim2.new(1, -24, 0, 8)
+			countBadge.BackgroundColor3 = Color3.fromRGB(255, 185, 30)
+			countBadge.BorderSizePixel = 0
+			countBadge.Parent = card
+			Instance.new("UICorner", countBadge).CornerRadius = UDim.new(0, 6)
+
+			local countLabel = Instance.new("TextLabel")
+			countLabel.Size = UDim2.new(1, 0, 1, 0)
+			countLabel.BackgroundTransparency = 1
+			countLabel.Font = Enum.Font.GothamBold
+			countLabel.TextSize = 11
+			countLabel.TextColor3 = Color3.fromRGB(30, 20, 0)
+			countLabel.Text = "x" .. item.count
+			countLabel.Parent = countBadge
+		end
+
+		-- Locked overlay
+		if not item.owned then
+			local lock = Instance.new("TextLabel")
+			lock.Size = UDim2.new(0, 24, 0, 24)
+			lock.Position = UDim2.new(0.5, -12, 0, 20)
+			lock.BackgroundTransparency = 1
+			lock.Font = Enum.Font.GothamBold
+			lock.TextSize = 22
+			lock.TextColor3 = Color3.fromRGB(140, 140, 160)
+			lock.Text = "🔒"
+			lock.Parent = card
+		end
+	end
+
+	-- Wire close button
+	closeBtn.MouseButton1Click:Connect(function()
+		-- handled below in panel toggle logic
+		closeBtn:SetAttribute("CloseClicked", true)
+	end)
+end
+
+-- ============================================================
+-- PANEL TOGGLE ANIMATION
+-- ============================================================
+local panelOpen = false
+
+local function openPanel()
+	panelOpen = true
+	panelAnchor.Visible = true
+	invPanel.GroupTransparency = 1
+
+	local tweenScale = TweenService:Create(invPanel, makeTweenInfo(CONFIG.PANEL_TWEEN_DURATION, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+		Size = UDim2.new(1, 0, 1, 0),
+	})
+	local tweenFade = TweenService:Create(invPanel, makeTweenInfo(CONFIG.PANEL_TWEEN_DURATION), {
+		GroupTransparency = 0,
+	})
+
+	-- Start slightly smaller then spring to full
+	invPanel.Size = UDim2.new(0.85, 0, 0.85, 0)
+	invPanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	invPanel.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+	tweenScale:Play()
+	tweenFade:Play()
+end
+
+local function closePanel()
+	panelOpen = false
+	local tweenScale = TweenService:Create(invPanel, makeTweenInfo(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
+		Size = UDim2.new(0.85, 0, 0.85, 0),
+	})
+	local tweenFade = TweenService:Create(invPanel, makeTweenInfo(0.25), {
+		GroupTransparency = 1,
+	})
+	tweenScale:Play()
+	tweenFade:Play()
+	tweenFade.Completed:Connect(function()
+		if not panelOpen then
+			panelAnchor.Visible = false
+			invPanel.Size = UDim2.new(1, 0, 1, 0)
+		end
+	end)
+end
+
+-- Inventory button
+invButton.MouseButton1Click:Connect(function()
+	if panelOpen then
+		closePanel()
+	else
+		openPanel()
+	end
+end)
+
+-- Close button inside panel
+local closeBtn = invPanel:FindFirstChild("CloseButton", true)
+if closeBtn then
+	closeBtn.MouseButton1Click:Connect(closePanel)
+end
+
+-- Click outside to close
+screenGui.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		if panelOpen then
+			local pos = input.Position
+			local panelPos = invPanel.AbsolutePosition
+			local panelSize = invPanel.AbsoluteSize
+			local outside = pos.X < panelPos.X or pos.X > panelPos.X + panelSize.X
+				or pos.Y < panelPos.Y or pos.Y > panelPos.Y + panelSize.Y
+			if outside then
+				closePanel()
+			end
+		end
+	end
+end)
+
+-- ============================================================
+-- BUTTON HOVER EFFECTS
+-- ============================================================
+local function addHoverEffect(button, normalColor, hoverColor)
+	button.MouseEnter:Connect(function()
+		TweenService:Create(button, makeTweenInfo(CONFIG.HOVER_TWEEN_DURATION), {
+			BackgroundColor3 = hoverColor,
+		}):Play()
+	end)
+	button.MouseLeave:Connect(function()
+		TweenService:Create(button, makeTweenInfo(CONFIG.HOVER_TWEEN_DURATION), {
+			BackgroundColor3 = normalColor,
+		}):Play()
+	end)
+	-- Press pop
+	button.MouseButton1Down:Connect(function()
+		TweenService:Create(button, makeTweenInfo(0.08), {
+			Size = UDim2.new(
+				button.Size.X.Scale, button.Size.X.Offset - 4,
+				button.Size.Y.Scale, button.Size.Y.Offset - 4
+			),
+		}):Play()
+	end)
+	button.MouseButton1Up:Connect(function()
+		TweenService:Create(button, makeTweenInfo(0.12, Enum.EasingStyle.Back), {
+			Size = UDim2.new(
+				button.Size.X.Scale, button.Size.X.Offset + 4,
+				button.Size.Y.Scale, button.Size.Y.Offset + 4
+			),
+		}):Play()
+	end)
+end
+
+addHoverEffect(invButton, Color3.fromRGB(30, 30, 38), Color3.fromRGB(50, 50, 68))
+
+-- ============================================================
+-- COIN COUNTER (animated number roll)
+-- ============================================================
+local displayedCoins = 0
+local targetCoins    = 0
+local coinTween      = nil
+
+local coinLabel = screenGui:FindFirstChild("CoinLabel", true)
+
+local function animateCoinsTo(newValue)
+	targetCoins = newValue
+	if coinTween then coinTween:Cancel() end
+
+	-- Use a NumberValue to drive the tween
+	local numVal = Instance.new("NumberValue")
+	numVal.Value = displayedCoins
+
+	coinTween = TweenService:Create(numVal, makeTweenInfo(CONFIG.COIN_TWEEN_DURATION, Enum.EasingStyle.Quart), {
+		Value = newValue,
+	})
+
+	numVal.Changed:Connect(function(v)
+		displayedCoins = math.floor(v)
+		if coinLabel then
+			coinLabel.Text = formatNumber(displayedCoins)
+		end
+	end)
+
+	coinTween.Completed:Connect(function()
+		numVal:Destroy()
+	end)
+
+	coinTween:Play()
+end
+
+-- ============================================================
+-- LEADERSTATS CONNECTION
+-- ============================================================
+-- Connects to player.leaderstats.Coins automatically.
+-- If using a custom RemoteEvent instead, swap this block.
+
+local function connectLeaderstats()
+	local leaderstats = player:WaitForChild("leaderstats", 10)
+	if not leaderstats then
+		warn("SimulatorUI: leaderstats not found — using demo mode")
+		return false
+	end
+	local coins = leaderstats:WaitForChild("Coins", 5)
+	if not coins then
+		warn("SimulatorUI: leaderstats.Coins not found — using demo mode")
+		return false
+	end
+
+	animateCoinsTo(coins.Value)
+
+	coins.Changed:Connect(function(newVal)
+		animateCoinsTo(newVal)
+	end)
+
+	return true
+end
+
+-- ============================================================
+-- DEMO MODE (auto-increment, remove in production)
+-- ============================================================
+local function runDemoMode()
+	local demoCoins = 0
+	while task.wait(1.5) do
+		demoCoins = demoCoins + math.random(10, 150)
+		animateCoinsTo(demoCoins)
+	end
+end
+
+-- Try leaderstats first; fall back to demo
+task.spawn(function()
+	local connected = connectLeaderstats()
+	if not connected then
+		task.spawn(runDemoMode)
+	end
+end)
+ServerScript for leaderstats — place in ServerScriptService as a Script named Leaderstats:
+
+-- Leaderstats (ServerScriptService > Script)
+local Players = game:GetService("Players")
+
+Players.PlayerAdded:Connect(function(player)
+	local leaderstats = Instance.new("Folder")
+	leaderstats.Name = "leaderstats"
+	leaderstats.Parent = player
+
+	local coins = Instance.new("IntValue")
+	coins.Name = "Coins"
+	coins.Value = 0
+	coins.Parent = leaderstats
+
+	-- Example: award coins over time (replace with your game logic)
+	task.spawn(function()
+		while player.Parent do
+			task.wait(5)
+			coins.Value = coins.Value + math.random(10, 50)
+		end
+	end)
+end)
